@@ -24,6 +24,7 @@
 //#define NODE_TOKEN "TOKEN DISPOSITIVO"
 
 
+
 char thingsboardServer[] = "demo.thingsboard.io";
 
 /*definir topicos.
@@ -86,7 +87,7 @@ void loop()
   }
 
   if ( millis() - lastSend > elapsedTime ) { // Update and send only after 1 seconds
-    getAndSendData();
+    //getAndSendData();
     lastSend = millis();
   }
 
@@ -160,7 +161,7 @@ void on_message(const char* topic, byte* payload, unsigned int length) {
   Serial.println(json);
 
   // Decode JSON request
-  /*
+ 
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& data = jsonBuffer.parseObject((char*)json);
 
@@ -173,22 +174,49 @@ void on_message(const char* topic, byte* payload, unsigned int length) {
   // Check request method
   String methodName = String((const char*)data["method"]);
 
-  if (methodName.equals("getGpioStatus")) {
+
+  Serial.print("Nombre metodo:");
+  Serial.println(methodName);
+ 
+  if (methodName.equals("openDoor")) {
+    bool action = data["params"];
+    openDoor(action);
     // Reply with GPIO status
-    String responseTopic = String(topic);
-    responseTopic.replace("request", "response");
-    client.publish(responseTopic.c_str(), get_gpio_status().c_str());
-  } else if (methodName.equals("setGpioStatus")) {
+    //String responseTopic = String(topic);
+    //responseTopic.replace("request", "response");
+    //client.publish(responseTopic.c_str(), get_gpio_status().c_str());
+  } 
+  else if (methodName.equals("rotateMotorValue")) {
+    String gradosTemp = (data["params"]);
+    int grados = gradosTemp.toInt();
+    moverMotor(grados);
+
+    /*
     // Update GPIO status and reply
     set_gpio_status(data["params"]["pin"], data["params"]["enabled"]);
     String responseTopic = String(topic);
     responseTopic.replace("request", "response");
     client.publish(responseTopic.c_str(), get_gpio_status().c_str());
     client.publish("v1/devices/me/attributes", get_gpio_status().c_str());
+    */
   }
-  */
+ 
 }
 
+void openDoor(bool action)
+{
+  if (action == true)
+    Serial.println("Abriendo puerta");
+   else
+    Serial.println("Cerrando puerta");
+}
+
+
+void moverMotor(int grados)
+{
+  Serial.print("moviendo motor:);
+  Serial.println(grados);
+}
 
 String get_gpio_status() {
   // Prepare gpios JSON payload string
@@ -239,8 +267,8 @@ void reconnect() {
       client.subscribe(requestTopic); 
       
       // Sending current GPIO status to init shared attributes
-      Serial.println("Sending current GPIO status ..."); 
-      client.publish(attributesTopic, get_gpio_status().c_str());
+      //Serial.println("Sending current GPIO status ..."); 
+      //client.publish(attributesTopic, get_gpio_status().c_str());
     } else {
       Serial.print( "[FAILED] [ rc = " );
       Serial.print( client.state() );
