@@ -25,6 +25,7 @@
 
 
 
+
 char thingsboardServer[] = "demo.thingsboard.io";
 
 /*definir topicos.
@@ -33,8 +34,8 @@ char thingsboardServer[] = "demo.thingsboard.io";
  * attributes - para recibir comandos en baes a atributtos shared definidos en el dispositivo
  */
 char telemetryTopic[] = "v1/devices/me/telemetry";
-char requestTopic[] = "v1/devices/me/rpc/request/+";
-char attributesTopic[] = "v1/devices/me/attributes";
+char requestTopic[] = "v1/devices/me/rpc/request/+";  //RPC - El Servidor usa este topico para enviar rquests, cliente response
+char attributesTopic[] = "v1/devices/me/attributes";  // Permite recibir o enviar mensajes dependindo de atributos compartidos
 
 // configuración sensores
 #define DHTPIN D1
@@ -52,15 +53,6 @@ const int elapsedTime = 1000; // tiempo transcurrido entre envios al servidor
 // Declarar e Inicializar sensores.
 DHT dht(DHTPIN, DHTTYPE);
 
-// para el que el ejemplo funcione
-#define GPIO0 0
-#define GPIO2 2
-
-#define GPIO0_PIN 3
-#define GPIO2_PIN 5
-
-// We assume that all GPIOs are LOW
-boolean gpioState[] = {false, false};
 
 // función setup micro
 void setup()
@@ -76,7 +68,7 @@ void setup()
   // agregado para recibir callbacks
   client.setCallback(on_message);
    
-  lastSend = 0;
+  lastSend = 0; // para controlar cada cuanto tiempo se envian datos
 }
 
 // función loop micro
@@ -87,7 +79,8 @@ void loop()
   }
 
   if ( millis() - lastSend > elapsedTime ) { // Update and send only after 1 seconds
-    //getAndSendData();
+    // Enviar datos de telemetria
+    getAndSendData();
     lastSend = millis();
   }
 
@@ -145,10 +138,13 @@ void getAndSendData()
 
 }
 
-// Agregado callback
-// The callback for when a PUBLISH message is received from the server.
-void on_message(const char* topic, byte* payload, unsigned int length) {
-
+/* 
+ *  Este callback se llaman cuando se utilizan widgets de control que envian mensajes por el topico requestTopic
+ *  en la función de reconnect se realiza la suscripción al topico de request
+ */
+void on_message(const char* topic, byte* payload, unsigned int length) 
+{
+  // Mostrar datos recibidos del servidor
   Serial.println("On message");
 
   char json[length + 1];
@@ -171,79 +167,108 @@ void on_message(const char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // Check request method
+  // Obtener el nombre del método invocado, esto lo envia el switch de la puerta y el knob del motor que están en el dashboard
   String methodName = String((const char*)data["method"]);
-
-
   Serial.print("Nombre metodo:");
   Serial.println(methodName);
- 
+
+  //responder segun el método 
   if (methodName.equals("openDoor")) {
     bool action = data["params"];
-    openDoor(action);
-    // Reply with GPIO status
-    //String responseTopic = String(topic);
-    //responseTopic.replace("request", "response");
-    //client.publish(responseTopic.c_str(), get_gpio_status().c_str());
-  } 
+    String doorStatus = openDoor(action);
+
+    // responder al servidor con el estado de la puerta
+    replyDoorRequest(doorStatus, topic);
+    
+
+  }
   else if (methodName.equals("rotateMotorValue")) {
     String gradosTemp = (data["params"]);
     int grados = gradosTemp.toInt();
-    moverMotor(grados);
 
-    /*
-    // Update GPIO status and reply
-    set_gpio_status(data["params"]["pin"], data["params"]["enabled"]);
-    String responseTopic = String(topic);
-    responseTopic.replace("request", "response");
-    client.publish(responseTopic.c_str(), get_gpio_status().c_str());
-    client.publish("v1/devices/me/attributes", get_gpio_status().c_str());
-    */
+    // se llama al motor para que gire los grados del parametro
+    moverMotor(grados);
+    replyMotorRequest(grados, topic);
   }
  
 }
 
-void openDoor(bool action)
+/*
+ * función que "abre" la puerta (simulada)
+ */
+String openDoor(bool action)
 {
-  if (action == true)
+  String returnValue = "NO ANDA";
+  if (action == true) {
     Serial.println("Abriendo puerta");
-   else
+    returnValue = "ABIERTA";
+  }
+   else {
     Serial.println("Cerrando puerta");
+    returnValue = "CERRADA";
+   }
+   return returnValue;
 }
 
+/*
+ * 
+ *Reply al servidro del estado de la puerta. se modifica el atributo compartido doorState y se refleja en la card asociada al misimo
+ *
+ */
+void replyDoorRequest(String doorStatus, const char* topic)
+{
+    // cambiar el topico de RPC a RESPONSE
+    String responseTopic = String(topic);
+    responseTopic.replace("request", "response");  //Notar que se cambio la palabra request por response en la cadena del topico
+    Serial.println(responseTopic);
+    
+     // Prepare a JSON payload string dicendo el estado de la puerta, Notar que la tarjeta del dashboar tiene este atributo definido
+     String payload = "{";
+     payload += "\"doorState\":"; payload += "\""  ; payload += doorStatus; payload += "\""; payload += "}";
 
+    // Send payload
+    char attributes[100];
+    payload.toCharArray( attributes, 100 );
+    Serial.print("respuesta puerta: ");
+    Serial.println(attributes);
+
+    // se envia la repsuesta la cual se despliegan en las tarjetas creadas para el atrubito 
+    client.publish(attributesTopic, attributes);
+}
+
+/*
+ * función que gira un servo X grados (simulada)
+ */
 void moverMotor(int grados)
 {
-  Serial.print("moviendo motor:);
+  Serial.print("moviendo motor");
   Serial.println(grados);
 }
 
-String get_gpio_status() {
-  // Prepare gpios JSON payload string
-  StaticJsonBuffer<200> jsonBuffer;
-  JsonObject& data = jsonBuffer.createObject();
-  data[String(GPIO0_PIN)] = gpioState[0] ? true : false;
-  data[String(GPIO2_PIN)] = gpioState[1] ? true : false;
-  char payload[256];
-  data.printTo(payload, sizeof(payload));
-  String strPayload = String(payload);
-  Serial.print("Get gpio status: ");
-  Serial.println(strPayload);
-  return strPayload;
-}
+/*
+ * 
+ *Reply al servidor. se modifica el atributo compartido gradosMotor y se refleja en la card asociada al misimo
+ *
+ */
+void replyMotorRequest(int grados, const char* topic)
+{
+    // cambiar el topico de RPC a RESPONSE
+    String responseTopic = String(topic);
+    responseTopic.replace("request", "response");  //Notar que se cambio la palabra request por response en la cadena del topico
+    Serial.println(responseTopic);
+    
+     // Prepare a JSON payload string dicendo el estado de la puerta, Notar que la tarjeta del dashboar tiene este atributo definido
+     String payload = "{";
+     payload += "\"gradosMotor\":";   ; payload += grados; ; payload += "}";
 
-void set_gpio_status(int pin, boolean enabled) {
-  if (pin == GPIO0_PIN) {
-    // Output GPIOs state
-    digitalWrite(GPIO0, enabled ? HIGH : LOW);
-    // Update GPIOs state
-    gpioState[0] = enabled;
-  } else if (pin == GPIO2_PIN) {
-    // Output GPIOs state
-    digitalWrite(GPIO2, enabled ? HIGH : LOW);
-    // Update GPIOs state
-    gpioState[1] = enabled;
-  }
+    // Send payload
+    char attributes[100];
+    payload.toCharArray( attributes, 100 );
+    Serial.print("respuesta motor: ");
+    Serial.println(attributes);
+
+    // se envia la repsuesta la cual se despliegan en las tarjetas creadas para el atrubito 
+    client.publish(attributesTopic, attributes);
 }
 
 
@@ -266,9 +291,6 @@ void reconnect() {
       // Subscribing to receive RPC requests 
       client.subscribe(requestTopic); 
       
-      // Sending current GPIO status to init shared attributes
-      //Serial.println("Sending current GPIO status ..."); 
-      //client.publish(attributesTopic, get_gpio_status().c_str());
     } else {
       Serial.print( "[FAILED] [ rc = " );
       Serial.print( client.state() );
