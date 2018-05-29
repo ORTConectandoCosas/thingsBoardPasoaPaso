@@ -1,4 +1,4 @@
-/* ejemplo para utilizar la comunicación con thingboards paso a paso con nodeMCU v2
+/* Ejemplo para utilizar la comunicación con thingboards paso a paso con nodeMCU v2
  *  Gastón Mousqués
  *  Basado en varios ejemplos de la documentación de  https://thingsboard.io
  *  
@@ -28,7 +28,6 @@
 //#define NODE_TOKEN "TOKEN DISPOSITIVO"   //Token que genera Thingboard para dispositivo cuando lo crearon
 
 
-
 //***************NO MODIFICAR *********************
 char thingsboardServer[] = "demo.thingsboard.io";
 
@@ -56,7 +55,6 @@ const int elapsedTime = 1000; // tiempo transcurrido entre envios al servidor
 #define DHTPIN D1
 #define DHTTYPE DHT11
 
-
 // Declarar e Inicializar sensores.
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -65,7 +63,8 @@ const int servoDoorClosedPosition = 0;
 const int servoDoorOpenedPosition = 90;
 const int servoPin = D4;
 
-//************************* Funciones *********************
+//
+//************************* Funciones Setup y loop *********************
 // función setup micro
 void setup()
 {
@@ -80,7 +79,8 @@ void setup()
    
   lastSend = 0; // para controlar cada cuanto tiempo se envian datos
 
-  // AGREGAR IINICIALZICION DE SENSORES PARA SU PROOYECTO
+
+  // ******** AGREGAR INICIALZICION DE SENSORES PARA SU PROYECTO *********
   doorServo.attach(servoPin); 
 
   initDoor();  // cierra la puerta
@@ -97,8 +97,10 @@ void loop()
   }
 
   if ( millis() - lastSend > elapsedTime ) { // Update and send only after 1 seconds
-    // Enviar datos de telemetria
+    
+    // FUNCION DE TELEMETRIA para enviar datos a thingsboard
     getAndSendData();   // FUNCION QUE ENVIA INFORMACIÓN DE TELEMETRIA
+    
     lastSend = millis();
   }
 
@@ -109,12 +111,12 @@ void loop()
 /*
  * función para leer datos de sensores y enviar telementria al servidor
  * Se debe sensar y armar el JSON especifico para su proyecto
+ * Esta función es llamada desde el loop()
  */
 void getAndSendData()
 {
 
-  // Lectura de sensores
-  
+  // Lectura de sensores 
   Serial.println("Collecting temperature data.");
 
   // Reading temperature or humidity takes about 250 milliseconds!
@@ -128,16 +130,8 @@ void getAndSendData()
     return;
   }
 
-  Serial.print("Humidity: ");
-  Serial.print(h);
-  Serial.print(" %\t");
-  Serial.print("Temperature: ");
-  Serial.print(t);
-  Serial.print(" *C ");
-
   String temperature = String(t);
   String humidity = String(h);
-
 
   //Debug messages
   Serial.print( "Sending temperature and humidity : [" );
@@ -146,9 +140,10 @@ void getAndSendData()
   Serial.print( "]   -> " );
 
 
-  // Preparar el payload del JSON payload
+  // Preparar el payload del JSON payload, a modo de ejemplo el mensaje se arma utilizando la clase String. esto se puede hacer con
+  // la biblioteca ArduinoJson (ver on message)
   // el formato es {key"value, Key: value, .....}
-  // en este caso seria {"tetemperature:"valor, "humidity:"valor}
+  // en este caso seria {"temperature:"valor, "humidity:"valor}
   //
   String payload = "{";
   payload += "\"temperature\":"; payload += temperature; payload += ",";
@@ -168,9 +163,9 @@ void getAndSendData()
 
 //***************MODIFICAR PARA SU PROYECTO *********************
 /* 
- *  Este callback se llaman cuando se utilizan widgets de control que envian mensajes por el topico requestTopic
- *  en la función de reconnect se realiza la suscripción al topico de request
- *  el Topico por el cual llegan los comandos viene en el parametro topci, en este ejemplo es requestTopic 
+ *  Este callback se llama cuando se utilizan widgets de control que envian mensajes por el topico requestTopic
+ *  Notar que en la función de reconnect se realiza la suscripción al topico de request
+ *  
  *  El formato del string que llega es "v1/devices/me/rpc/request/{id}/Operación. donde operación es el método get declarado en el  
  *  widget que usan para mandar el comando e {id} es el indetificador del mensaje generado por el servidor
  */
@@ -189,7 +184,7 @@ void on_message(const char* topic, byte* payload, unsigned int length)
   Serial.println(json);
 
   // Decode JSON request
- 
+  // Notar que a modo de ejemplo este mensaje se arma utilizando la librería ArduinoJson en lugar de desarmar el string a "mano"
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& data = jsonBuffer.parseObject((char*)json);
 
@@ -207,35 +202,34 @@ void on_message(const char* topic, byte* payload, unsigned int length)
   /* Responder segun el método 
    *  En este caso 
    *     el widget switch envia el comando openDoor con un paramtro true o false
-   *     el wisget gauge envian un comando rotateMotorValue con un int de los grados a rotar el motos (servo)
+   *     el widget gauge envian un comando rotateMotorValue con un int de los grados a rotar el motos (servo)
+   *     Luego se responde con un mensaje para que actualice la Card correspondiente a la Door (doorState)
    */
   if (methodName.equals("openDoor")) {
     bool action = data["params"];
-    String doorStatus = openDoor(action);
+    String doorStatus = openOrCloseDoor(action);
 
     // responder al servidor con el estado de la puerta
-    replyDoorRequest(doorStatus, topic);
-    
-
+    updateDoorStatus(doorStatus, topic);
   }
   else if (methodName.equals("rotateMotorValue")) {
     String gradosTemp = (data["params"]);
     int grados = gradosTemp.toInt();
 
     // se llama al motor para que gire los grados del parametro
-    moverMotor(grados);
-    replyMotorRequest(grados, topic);
+    moveMotor(grados);
+    updateMotorStatus(grados, topic);
   }
  
 }
 
-//***************MODIFICAR PARA SU PROYECTO *********************
+//***************MODIFICAR PARA SU PROYECTO PARA PROCESAR UN COMANDO *********************
 
 /*
  * función que "abre" la puerta (simulada).
  * En su proyecto habria que programar lo que hace el dispositivo al recibir el comando
  */
-String openDoor(bool action)
+String openOrCloseDoor(bool action)
 {
   String returnValue = "NO ANDA";
   if (action == true) {
@@ -251,20 +245,15 @@ String openDoor(bool action)
    return returnValue;
 }
 
-// Función para inicializar con la puerta cerrada
-void initDoor()
-{
-  doorServo.write(servoDoorClosedPosition);
-}
 
 /*
  * 
- *Reply al servidor del estado de la puerta. se modifica el atributo compartido doorState y se refleja en la card asociada al misimo
+ *Reply al servidor del estado de la puerta. se modifica el atributo compartido doorState y se refleja en la card asociada al misimo que despliega la variable doorStatus
  *Las respuestas al servidor son OPCIONALES.   El formato del string que se envia es "v1/devices/me/rpc/response/{id}/Respuesta. donde Respuesta es el método get declarado en el  
  *widget que usan para mandar el comando e {id} es el indetificador del mensaje generado por el servidor. Notar que en el string del nomber del tópico 
  *se sustituye la palabra Resquest por Response, esto se hace para reusar el nombre del topico que solo difiere en si es request o response
  */
-void replyDoorRequest(String doorStatus, const char* topic)
+void updateDoorStatus(String doorStatus, const char* topic)
 {
     // cambiar el topico de RPC a RESPONSE
     String responseTopic = String(topic);
@@ -286,24 +275,20 @@ void replyDoorRequest(String doorStatus, const char* topic)
     client.publish(attributesTopic, attributes);
 }
 
-
-//***************MODIFICAR PARA SU PROYECTO *********************
-/* El proceso para otros comandos es el mismo que en el caso de openDoor
- * función que gira un servo X grados (simulada)
- */
-void moverMotor(int grados)
+// Función para inicializar con la puerta cerrada
+void initDoor()
 {
-  Serial.print("moviendo motor");
-  Serial.println(grados);
-  doorServo.write(grados);
+  doorServo.write(servoDoorClosedPosition);
 }
+
+//***************MODIFICAR PARA SU PROYECTO PARA PROCESAR UN COMANDO*********************
 
 /*
  * 
  *Reply al servidor. se modifica el atributo compartido gradosMotor y se refleja en la card asociada al misimo
  *
  */
-void replyMotorRequest(int grados, const char* topic)
+void updateMotorStatus(int grados, const char* topic)
 {
     // cambiar el topico de RPC a RESPONSE
     String responseTopic = String(topic);
@@ -324,8 +309,19 @@ void replyMotorRequest(int grados, const char* topic)
     client.publish(attributesTopic, attributes);
 }
 
+/* El proceso para otros comandos es el mismo que en el caso de openDoor
+ * función que gira un servo X grados (simulada)
+ */
+void moveMotor(int grados)
+{
+  Serial.print("moviendo motor");
+  Serial.println(grados);
+  doorServo.write(grados);
+}
 
 
+
+//***************NO MODIFICAR *********************
 /*
  * funcion para reconectarse al servidor de thingsboard y suscribirse a los topicos de RPC y Atributos
  */
@@ -341,7 +337,7 @@ void reconnect() {
     if ( client.connect(NODE_NAME, NODE_TOKEN, NULL) ) {
       Serial.println( "[DONE]" );
       
-      // Subscribing to receive RPC requests 
+      // Suscribir al Topico de request
       client.subscribe(requestTopic); 
       
     } else {
