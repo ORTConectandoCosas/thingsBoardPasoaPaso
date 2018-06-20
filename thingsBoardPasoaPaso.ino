@@ -19,13 +19,13 @@
 //***************MODIFICAR PARA SU PROYECTO *********************
 //  configuración datos wifi 
 // decomentar el define y poner los valores de su red y de su dispositivo
-//#define WIFI_AP "SSID RED"
-//#define WIFI_PASSWORD "PASSWORD RED"
+#define WIFI_AP "SSID RED"
+#define WIFI_PASSWORD "PASSWORD RED"
 
 
 //  configuración datos thingsboard
-//#define NODE_NAME "NOMBRE DISPOSITIVO"   //nombre que le pusieron al dispositivo cuando lo crearon
-//#define NODE_TOKEN "TOKEN DISPOSITIVO"   //Token que genera Thingboard para dispositivo cuando lo crearon
+#define NODE_NAME "NOMBRE DISPOSITIVO"   //nombre que le pusieron al dispositivo cuando lo crearon
+#define NODE_TOKEN "TOKEN DISPOSITIVO"   //Token que genera Thingboard para dispositivo cuando lo crearon
 
 
 //***************NO MODIFICAR *********************
@@ -256,18 +256,24 @@ String openOrCloseDoor(bool action)
 void updateDoorStatus(String doorStatus, const char* topic)
 {
     // cambiar el topico de RPC a RESPONSE
+   
     String responseTopic = String(topic);
     responseTopic.replace("request", "response");  //Notar que se cambio la palabra request por response en la cadena del topico
     Serial.println(responseTopic);
-    
-     // Prepare a JSON payload string dicendo el estado de la puerta, Notar que la tarjeta del dashboar tiene este atributo definido
-     String payload = "{";
-     payload += "\"doorState\":"; payload += "\""  ; payload += doorStatus; payload += "\""; payload += "}";
+
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& root = jsonBuffer.createObject();
+    root["doorState"] = doorStatus;
+
+    // Prepare a JSON payload string dicendo el estado de la puerta, Notar que la tarjeta del dashboar tiene este atributo definido
+    //String payload = "{";
+    //payload += "\"doorState\":"; payload += "\""  ; payload += doorStatus; payload += "\""; payload += "}";
 
 
     // Send payload
     char attributes[100];
-    payload.toCharArray( attributes, 100 );
+    root.printTo(attributes);
+  //  payload.toCharArray( attributes, 100 );
     Serial.print("respuesta puerta: ");
     Serial.println(attributes);
 
